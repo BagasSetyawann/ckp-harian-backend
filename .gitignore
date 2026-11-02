@@ -1,0 +1,19 @@
+# Dependencies
+node_modules/
+
+# Environment files
+.env
+.env.*
+!.env.example
+
+# Local SQLite & Uploaded files
+data/*.db
+data/*.sqlite
+uploads/*
+!uploads/.gitkeep
+
+# Logs & temp
+*.log
+npm-debug.log*
+.DS_Store
+Thumbs.db
