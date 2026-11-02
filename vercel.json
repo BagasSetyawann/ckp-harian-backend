@@ -11,5 +11,11 @@
             "src": "/(.*)",
             "dest": "src/app.js"
         }
+    ],
+    "rewrites": [
+        {
+            "source": "/api/:path*",
+            "destination": "https://ckp-harian-backend.vercel.app/api/:path*"
+        }
     ]
 }
