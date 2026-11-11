@@ -1,15 +1,15 @@
 const bcrypt = require('bcryptjs');
 
-function seedInitialData(db) {
+async function seedInitialData(db) {
   console.log('🌱 Seeding initial data...');
 
   // Seed Roles
   const insertRole = db.prepare('INSERT OR IGNORE INTO roles (name, description) VALUES (?, ?)');
-  insertRole.run('KPA', 'Kuasa Pengguna Anggaran - Admin Penilai dengan akses penuh');
-  insertRole.run('Kasubbag', 'Kepala Sub Bagian - Atasan dengan akses monitoring');
-  insertRole.run('Anggota', 'Pegawai - Akses terbatas pada data sendiri');
+  await insertRole.run('KPA', 'Kuasa Pengguna Anggaran - Admin Penilai dengan akses penuh');
+  await insertRole.run('Kasubbag', 'Kepala Sub Bagian - Atasan dengan akses monitoring');
+  await insertRole.run('Anggota', 'Pegawai - Akses terbatas pada data sendiri');
 
-  const roles = db.prepare('SELECT id, name FROM roles').all();
+  const roles = await db.prepare('SELECT id, name FROM roles').all();
   const roleMap = {};
   roles.forEach(r => roleMap[r.name] = r.id);
 
@@ -33,20 +33,24 @@ function seedInitialData(db) {
     { username: 'dewi', role: 'Anggota', nip: '198812102012012004', nama: 'Dewi Rahayu, S.Sos', jabatan: 'Statistisi Ahli Pertama', unit: 'Bidang Sosial', golongan: 'III/b', email: 'dewi@dinasstat.go.id' },
   ];
 
-  users.forEach(u => {
-    const userResult = insertUser.run(u.username, password, roleMap[u.role]);
-    const userId = userResult.lastInsertRowid || db.prepare('SELECT id FROM users WHERE username = ?').get(u.username)?.id;
+  for (const u of users) {
+    const userResult = await insertUser.run(u.username, password, roleMap[u.role]);
+    const existingUser = await db.prepare('SELECT id FROM users WHERE username = ?').get(u.username);
+    const userId = userResult.lastInsertRowid || existingUser?.id;
     if (userId) {
-      insertEmployee.run(userId, u.nip, u.nama, u.jabatan, u.unit, u.golongan, u.email);
+      const existingEmp = await db.prepare('SELECT id FROM employees WHERE user_id = ?').get(userId);
+      if (!existingEmp) {
+        await insertEmployee.run(userId, u.nip, u.nama, u.jabatan, u.unit, u.golongan, u.email);
+      }
     }
-  });
+  }
 
   // Seed CKP Components
   const insertComponent = db.prepare(`
     INSERT OR IGNORE INTO ckp_components (kode, nama, deskripsi, urutan) VALUES (?, ?, ?, ?)
   `);
-  insertComponent.run('PK', 'Nilai Capaian Kinerja (PK)', 'Nilai berdasarkan capaian target rencana kinerja', 1);
-  insertComponent.run('PERILAKU', 'Nilai Perilaku Kerja', 'Nilai berdasarkan penilaian aspek perilaku', 2);
+  await insertComponent.run('PK', 'Nilai Capaian Kinerja (PK)', 'Nilai berdasarkan capaian target rencana kinerja', 1);
+  await insertComponent.run('PERILAKU', 'Nilai Perilaku Kerja', 'Nilai berdasarkan penilaian aspek perilaku', 2);
 
   // Seed Periods (Jan - Sep 2026)
   const insertPeriod = db.prepare(`
@@ -66,24 +70,25 @@ function seedInitialData(db) {
     { bulan: 9, nama: 'September 2026', mulai: '2026-09-01', akhir: '2026-09-30', batas: '2026-10-05', status: 'aktif', active: 1 },
   ];
 
-  months.forEach(m => {
-    insertPeriod.run(m.nama, 2026, m.bulan, m.mulai, m.akhir, m.batas, m.status, m.active);
-  });
+  for (const m of months) {
+    await insertPeriod.run(m.nama, 2026, m.bulan, m.mulai, m.akhir, m.batas, m.status, m.active);
+  }
 
-  const activePeriod = db.prepare('SELECT id FROM periods WHERE is_active = 1').get();
+  const activePeriod = await db.prepare('SELECT id FROM periods WHERE is_active = 1').get();
   if (!activePeriod) return;
   const periodId = activePeriod.id;
 
   // Seed CKP Weights for active period
+  const pkComp = await db.prepare('SELECT id FROM ckp_components WHERE kode = ?').get('PK');
+  const perilakuComp = await db.prepare('SELECT id FROM ckp_components WHERE kode = ?').get('PERILAKU');
   const insertWeight = db.prepare(`
-    INSERT OR IGNORE INTO ckp_weights (period_id, component_id, bobot)
-    SELECT ?, id, ? FROM ckp_components WHERE kode = ?
+    INSERT OR IGNORE INTO ckp_weights (period_id, component_id, bobot) VALUES (?, ?, ?)
   `);
-  insertWeight.run(periodId, 80, 'PK');
-  insertWeight.run(periodId, 20, 'PERILAKU');
+  if (pkComp) await insertWeight.run(periodId, pkComp.id, 80);
+  if (perilakuComp) await insertWeight.run(periodId, perilakuComp.id, 20);
 
   // Get employee IDs
-  const employees = db.prepare(`
+  const employees = await db.prepare(`
     SELECT e.id, e.nama, u.username FROM employees e JOIN users u ON e.user_id = u.id
   `).all();
   const empMap = {};
@@ -120,18 +125,22 @@ function seedInitialData(db) {
   };
 
   const planIds = {};
-  Object.keys(plansData).forEach(username => {
-    if (!empMap[username]) return;
+  for (const username of Object.keys(plansData)) {
+    if (!empMap[username]) continue;
     const empId = empMap[username].id;
     planIds[username] = [];
-    plansData[username].forEach(p => {
-      const result = insertPlan.run(empId, periodId, p.kode, p.nama, p.desc, p.indikator, p.target, p.satuan, p.bobot);
-      const planId = result.lastInsertRowid || db.prepare(
+    for (const p of plansData[username]) {
+      const existingPlan = await db.prepare(
         'SELECT id FROM performance_plans WHERE employee_id = ? AND kode = ? AND period_id = ?'
-      ).get(empId, p.kode, periodId)?.id;
+      ).get(empId, p.kode, periodId);
+      let planId = existingPlan?.id;
+      if (!planId) {
+        const result = await insertPlan.run(empId, periodId, p.kode, p.nama, p.desc, p.indikator, p.target, p.satuan, p.bobot);
+        planId = result.lastInsertRowid;
+      }
       planIds[username].push({ id: planId, target: p.target, satuan: p.satuan });
-    });
-  });
+    }
+  }
 
   // Seed Daily Activities for September 2026 (days 1-15)
   const insertActivity = db.prepare(`
@@ -145,7 +154,8 @@ function seedInitialData(db) {
     VALUES (?, ?, ?, ?, ?)
   `);
 
-  const kpaUserId = db.prepare('SELECT id FROM users WHERE username = ?').get('admin')?.id;
+  const kpaUser = await db.prepare('SELECT id FROM users WHERE username = ?').get('admin');
+  const kpaUserId = kpaUser?.id;
 
   const activitiesData = {
     budi: [
@@ -200,14 +210,13 @@ function seedInitialData(db) {
     ],
   };
 
-  Object.keys(activitiesData).forEach(username => {
-    if (!empMap[username] || !planIds[username]) return;
+  for (const username of Object.keys(activitiesData)) {
+    if (!empMap[username] || !planIds[username]) continue;
     const empId = empMap[username].id;
-    activitiesData[username].forEach(a => {
+    for (const a of activitiesData[username]) {
       const plan = planIds[username][a.pkIdx];
-      if (!plan) return;
-      const capaian = plan.target > 0 ? Math.min((a.real / plan.target) * 100, 100) : 0;
-      const result = insertActivity.run(
+      if (!plan) continue;
+      const result = await insertActivity.run(
         empId, plan.id, periodId, a.date, a.kegiatan,
         `Melaksanakan ${a.kegiatan.toLowerCase()}`,
         a.target, plan.satuan, a.real, Math.round((a.real / a.target) * 100),
@@ -215,10 +224,10 @@ function seedInitialData(db) {
       );
       const actId = result.lastInsertRowid;
       if (a.verified && actId && kpaUserId) {
-        insertVerif.run(actId, kpaUserId, 'terverifikasi', 'Sudah sesuai dengan target', a.date + ' 16:00:00');
+        await insertVerif.run(actId, kpaUserId, 'terverifikasi', 'Sudah sesuai dengan target', a.date + ' 16:00:00');
       }
-    });
-  });
+    }
+  }
 
   // Seed Behavior Assessments
   const insertBehavior = db.prepare(`
@@ -227,8 +236,7 @@ function seedInitialData(db) {
     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
   `);
 
-  // Previous months behavior (Aug 2026 = period_id -1 from active)
-  const prevPeriod = db.prepare('SELECT id FROM periods WHERE bulan = 8 AND tahun = 2026').get();
+  const prevPeriod = await db.prepare('SELECT id FROM periods WHERE bulan = 8 AND tahun = 2026').get();
   if (prevPeriod && kpaUserId) {
     const behaviorScores = [
       { username: 'budi', scores: [88, 85, 87, 90, 88, 86, 89] },
@@ -236,32 +244,32 @@ function seedInitialData(db) {
       { username: 'reza', scores: [85, 88, 92, 87, 86, 90, 88] },
       { username: 'dewi', scores: [90, 87, 86, 92, 90, 88, 91] },
     ];
-    behaviorScores.forEach(b => {
-      if (!empMap[b.username]) return;
+    for (const b of behaviorScores) {
+      if (!empMap[b.username]) continue;
       const avg = b.scores.reduce((a, c) => a + c, 0) / b.scores.length;
-      insertBehavior.run(empMap[b.username].id, prevPeriod.id, kpaUserId, ...b.scores, Math.round(avg * 10) / 10, 'Penilaian perilaku bulan Agustus 2026');
-    });
+      await insertBehavior.run(empMap[b.username].id, prevPeriod.id, kpaUserId, ...b.scores, Math.round(avg * 10) / 10, 'Penilaian perilaku bulan Agustus 2026');
+    }
   }
 
   // Seed System Settings
   const insertSetting = db.prepare('INSERT OR IGNORE INTO system_settings (key, value, description) VALUES (?, ?, ?)');
-  insertSetting.run('app_name', 'SI-CKP', 'Nama aplikasi');
-  insertSetting.run('app_subtitle', 'Sistem Informasi Capaian Kinerja Pegawai', 'Subtitle aplikasi');
-  insertSetting.run('instansi', 'Dinas Statistik Daerah', 'Nama instansi');
-  insertSetting.run('hari_kerja', 'senin,selasa,rabu,kamis,jumat', 'Hari kerja (pengisian wajib)');
-  insertSetting.run('toleransi_hari', '3', 'Toleransi keterlambatan pengisian (hari)');
-  insertSetting.run('kasubbag_can_verify', 'false', 'Apakah Kasubbag dapat melakukan verifikasi');
-  insertSetting.run('reminder_enabled', 'true', 'Aktifkan reminder otomatis');
+  await insertSetting.run('app_name', 'SI-CKP', 'Nama aplikasi');
+  await insertSetting.run('app_subtitle', 'Sistem Informasi Capaian Kinerja Pegawai', 'Subtitle aplikasi');
+  await insertSetting.run('instansi', 'Dinas Statistik Daerah', 'Nama instansi');
+  await insertSetting.run('hari_kerja', 'senin,selasa,rabu,kamis,jumat', 'Hari kerja (pengisian wajib)');
+  await insertSetting.run('toleransi_hari', '3', 'Toleransi keterlambatan pengisian (hari)');
+  await insertSetting.run('kasubbag_can_verify', 'false', 'Apakah Kasubbag dapat melakukan verifikasi');
+  await insertSetting.run('reminder_enabled', 'true', 'Aktifkan reminder otomatis');
 
   // Seed Notifications for active users
   const insertNotif = db.prepare(`
     INSERT OR IGNORE INTO notifications (user_id, judul, pesan, jenis)
     VALUES (?, ?, ?, ?)
   `);
-  const activeUsers = db.prepare('SELECT id, username FROM users WHERE is_active = 1').all();
-  activeUsers.forEach(u => {
-    insertNotif.run(u.id, 'Selamat Datang di SI-CKP', `Halo! Selamat datang di Sistem Informasi Capaian Kinerja Pegawai. Pastikan Anda mengisi kegiatan harian setiap hari kerja.`, 'info');
-  });
+  const activeUsers = await db.prepare('SELECT id, username FROM users WHERE is_active = 1').all();
+  for (const u of activeUsers) {
+    await insertNotif.run(u.id, 'Selamat Datang di SI-CKP', `Halo! Selamat datang di Sistem Informasi Capaian Kinerja Pegawai. Pastikan Anda mengisi kegiatan harian setiap hari kerja.`, 'info');
+  }
 
   // Seed Activity Logs
   const insertLog = db.prepare(`
@@ -269,7 +277,7 @@ function seedInitialData(db) {
     VALUES (?, ?, ?, ?, ?)
   `);
   if (kpaUserId) {
-    insertLog.run(kpaUserId, 'SEED_DATA', 'system', null, JSON.stringify({ message: 'Initial data seeded' }));
+    await insertLog.run(kpaUserId, 'SEED_DATA', 'system', null, JSON.stringify({ message: 'Initial data seeded' }));
   }
 
   console.log('✅ Seed data completed successfully!');

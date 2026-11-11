@@ -107,8 +107,8 @@ async function initDatabase() {
     _initPromise = (async () => {
       const db = getDb();
       await db.exec(SCHEMA_SQL);
-      const roleCount = await db.prepare('SELECT COUNT(*) as count FROM roles').get();
-      if (!roleCount || roleCount.count === 0) {
+      const userCount = await db.prepare('SELECT COUNT(*) as count FROM users').get();
+      if (!userCount || userCount.count === 0) {
         const seed = require('./seed');
         await seed.seedInitialData(db);
       }
