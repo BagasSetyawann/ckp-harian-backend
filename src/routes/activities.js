@@ -138,7 +138,7 @@ router.get('/:id', authenticate, async (req, res) => {
 });
 
 // POST /api/activities
-router.post('/', authenticate, async (req, res) => {
+router.post('/', authenticate, requireRole('Anggota'), async (req, res) => {
   const db = getDb();
   const { performance_plan_id, period_id, tanggal, nama_kegiatan, deskripsi, target, satuan, realisasi, status_kegiatan, catatan } = req.body;
 
@@ -164,7 +164,7 @@ router.post('/', authenticate, async (req, res) => {
 });
 
 // PUT /api/activities/:id
-router.put('/:id', authenticate, async (req, res) => {
+router.put('/:id', authenticate, requireRole('Anggota'), async (req, res) => {
   const db = getDb();
   const old = await db.prepare('SELECT * FROM daily_activities WHERE id = ?').get(req.params.id);
   if (!old) return res.status(404).json({ error: 'Kegiatan tidak ditemukan' });
@@ -192,14 +192,13 @@ router.put('/:id', authenticate, async (req, res) => {
 });
 
 // DELETE /api/activities/:id
-router.delete('/:id', authenticate, async (req, res) => {
+router.delete('/:id', authenticate, requireRole('Anggota'), async (req, res) => {
   const db = getDb();
   const old = await db.prepare('SELECT * FROM daily_activities WHERE id = ?').get(req.params.id);
   if (!old) return res.status(404).json({ error: 'Kegiatan tidak ditemukan' });
   if (req.user.role === 'Anggota' && old.employee_id !== req.user.employeeId) {
     return res.status(403).json({ error: 'Akses ditolak' });
   }
-  if (req.user.role === 'Kasubbag') return res.status(403).json({ error: 'Kasubbag tidak dapat menghapus kegiatan' });
   await db.prepare('DELETE FROM daily_activities WHERE id = ?').run(req.params.id);
   await logActivity(req.user.id, 'DELETE_ACTIVITY', 'daily_activities', parseInt(req.params.id), old, null);
   res.json({ message: 'Kegiatan berhasil dihapus' });

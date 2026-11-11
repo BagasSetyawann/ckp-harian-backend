@@ -51,7 +51,7 @@ router.get('/pending', authenticate, requireRole('KPA', 'Kasubbag'), async (req,
 });
 
 // POST /api/verifications/:activityId — Verify an activity
-router.post('/:activityId', authenticate, requireRole('KPA', 'Kasubbag'), async (req, res) => {
+router.post('/:activityId', authenticate, requireRole('Kasubbag'), async (req, res) => {
   const db = getDb();
   const actId = parseInt(req.params.activityId);
   const { status, catatan } = req.body;

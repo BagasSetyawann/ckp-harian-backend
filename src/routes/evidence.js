@@ -1,7 +1,7 @@
 const express = require('express');
 const path = require('path');
 const { getDb } = require('../db/database');
-const { authenticate, logActivity } = require('../middleware/auth');
+const { authenticate, requireRole, logActivity } = require('../middleware/auth');
 const { ALLOWED_MIME_TYPES } = require('../middleware/upload');
 const { getStorage, ensureBucket, BUCKET, MAX_FILE_SIZE } = require('../utils/storage');
 
@@ -42,7 +42,7 @@ router.get('/activity/:activityId', authenticate, async (req, res) => {
 // POST /api/evidence/upload-url/:activityId
 // Langkah 1: minta signed upload URL. File lalu diupload langsung dari browser ke Supabase Storage
 // (melewati batas body 4.5MB Vercel).
-router.post('/upload-url/:activityId', authenticate, async (req, res) => {
+router.post('/upload-url/:activityId', authenticate, requireRole('Anggota'), async (req, res) => {
   const db = getDb();
   const actId = parseInt(req.params.activityId);
   const { nama_file, mime_type, ukuran_file } = req.body;
@@ -69,7 +69,7 @@ router.post('/upload-url/:activityId', authenticate, async (req, res) => {
 
 // POST /api/evidence/file/:activityId
 // Langkah 2: simpan metadata file yang sudah terupload ke Supabase Storage
-router.post('/file/:activityId', authenticate, async (req, res) => {
+router.post('/file/:activityId', authenticate, requireRole('Anggota'), async (req, res) => {
   const db = getDb();
   const actId = parseInt(req.params.activityId);
   const { path: storagePath, nama_file, mime_type, ukuran_file, keterangan } = req.body;
@@ -94,7 +94,7 @@ router.post('/file/:activityId', authenticate, async (req, res) => {
 });
 
 // POST /api/evidence/link/:activityId — Add link
-router.post('/link/:activityId', authenticate, async (req, res) => {
+router.post('/link/:activityId', authenticate, requireRole('Anggota'), async (req, res) => {
   const db = getDb();
   const actId = parseInt(req.params.activityId);
   const { judul, url, platform, keterangan } = req.body;
@@ -113,7 +113,7 @@ router.post('/link/:activityId', authenticate, async (req, res) => {
 });
 
 // DELETE /api/evidence/file/:id
-router.delete('/file/:id', authenticate, async (req, res) => {
+router.delete('/file/:id', authenticate, requireRole('Anggota'), async (req, res) => {
   const db = getDb();
   const ev = await db.prepare(`
     SELECT ae.*, da.employee_id FROM activity_evidence ae
@@ -137,7 +137,7 @@ router.delete('/file/:id', authenticate, async (req, res) => {
 });
 
 // DELETE /api/evidence/link/:id
-router.delete('/link/:id', authenticate, async (req, res) => {
+router.delete('/link/:id', authenticate, requireRole('Anggota'), async (req, res) => {
   const db = getDb();
   const link = await db.prepare(`
     SELECT el.*, da.employee_id FROM evidence_links el
