@@ -211,6 +211,17 @@ CREATE TABLE IF NOT EXISTS activity_logs (
   created_at TIMESTAMP DEFAULT NOW()
 );
 
+CREATE TABLE IF NOT EXISTS changelogs (
+  id SERIAL PRIMARY KEY,
+  versi TEXT NOT NULL UNIQUE,
+  judul TEXT NOT NULL,
+  tanggal TEXT NOT NULL,
+  tipe TEXT DEFAULT 'major',
+  perubahan TEXT NOT NULL,
+  created_by INTEGER REFERENCES users(id),
+  created_at TIMESTAMP DEFAULT NOW()
+);
+
 CREATE INDEX IF NOT EXISTS idx_activities_emp_tanggal ON daily_activities(employee_id, tanggal);
 CREATE INDEX IF NOT EXISTS idx_activities_period ON daily_activities(period_id);
 CREATE INDEX IF NOT EXISTS idx_evidence_activity ON activity_evidence(activity_id);

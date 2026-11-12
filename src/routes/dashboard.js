@@ -17,10 +17,9 @@ router.get('/pegawai', authenticate, async (req, res) => {
 
   // Today's activities
   const todayActivities = await db.prepare(`
-    SELECT da.*, pp.nama as pk_nama, v.status as verif_status
+    SELECT da.*, pp.nama as pk_nama
     FROM daily_activities da
     LEFT JOIN performance_plans pp ON da.performance_plan_id = pp.id
-    LEFT JOIN verifications v ON v.activity_id = da.id
     WHERE da.employee_id = ? AND da.tanggal = ?
     ORDER BY da.created_at DESC
   `).all(empId, todayStr);
@@ -123,11 +122,9 @@ router.get('/kpa', authenticate, requireRole('KPA', 'Kasubbag'), async (req, res
     SELECT COUNT(*) as count FROM daily_activities WHERE tanggal = ?
   `).get(todayStr)).count;
 
-  // Pending verifications
-  const menungguVerif = (await db.prepare(`
-    SELECT COUNT(*) as count FROM daily_activities da
-    LEFT JOIN verifications v ON v.activity_id = da.id
-    WHERE v.id IS NULL AND da.period_id = ?
+  // Total activities in active period
+  const kegiatanBulanIni = (await db.prepare(`
+    SELECT COUNT(*) as count FROM daily_activities WHERE period_id = ?
   `).get(periodId)).count;
 
   // Average CKP
@@ -184,7 +181,7 @@ router.get('/kpa', authenticate, requireRole('KPA', 'Kasubbag'), async (req, res
       sudah_isi: sudahIsi,
       belum_isi: belumIsi,
       kegiatan_hari_ini: kegiatanHariIni,
-      menunggu_verifikasi: menungguVerif,
+      kegiatan_bulan_ini: kegiatanBulanIni,
       rata_rata_ckp: Math.round((avgCKP || 0) * 10) / 10,
     },
     belum_isi_list: belumIsiList,

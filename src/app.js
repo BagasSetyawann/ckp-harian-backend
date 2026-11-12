@@ -18,6 +18,7 @@ const dashboardRoutes = require('./routes/dashboard');
 const activityLogRoutes = require('./routes/activityLog');
 const exportRoutes = require('./routes/export');
 const mphRoutes = require('./routes/mph');
+const changelogsRoutes = require('./routes/changelogs');
 
 const app = express();
 
@@ -55,6 +56,7 @@ app.use('/api/dashboard', dashboardRoutes);
 app.use('/api/activity-log', activityLogRoutes);
 app.use('/api/export', exportRoutes);
 app.use('/api/mph', mphRoutes);
+app.use('/api/changelogs', changelogsRoutes);
 
 // 404 handler
 app.use((req, res) => {

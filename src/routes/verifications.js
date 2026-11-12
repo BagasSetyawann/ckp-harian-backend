@@ -50,50 +50,14 @@ router.get('/pending', authenticate, requireRole('KPA', 'Kasubbag'), async (req,
   res.json(await db.prepare(query).all(...params));
 });
 
-// POST /api/verifications/:activityId — Verify an activity
-router.post('/:activityId', authenticate, requireRole('Kasubbag'), async (req, res) => {
-  const db = getDb();
-  const actId = parseInt(req.params.activityId);
-  const { status, catatan } = req.body;
-
-  // Check Kasubbag permission
-  if (req.user.role === 'Kasubbag') {
-    const setting = await db.prepare("SELECT value FROM system_settings WHERE key = 'kasubbag_can_verify'").get();
-    if (!setting || setting.value !== 'true') {
-      return res.status(403).json({ error: 'Kasubbag tidak memiliki izin verifikasi. Hubungi KPA.' });
-    }
-  }
-
-  const activity = await db.prepare('SELECT * FROM daily_activities WHERE id = ?').get(actId);
-  if (!activity) return res.status(404).json({ error: 'Kegiatan tidak ditemukan' });
-
-  const existing = await db.prepare('SELECT * FROM verifications WHERE activity_id = ?').get(actId);
-  if (existing) {
-    await db.prepare(`
-      UPDATE verifications SET verified_by=?, status=?, catatan=?, verified_at=CURRENT_TIMESTAMP
-      WHERE activity_id=?
-    `).run(req.user.id, status || 'terverifikasi', catatan || null, actId);
-  } else {
-    await db.prepare(`
-      INSERT INTO verifications (activity_id, verified_by, status, catatan)
-      VALUES (?, ?, ?, ?)
-    `).run(actId, req.user.id, status || 'terverifikasi', catatan || null);
-  }
-
-  const verif = await db.prepare('SELECT * FROM verifications WHERE activity_id = ?').get(actId);
-  await logActivity(req.user.id, 'VERIFY_ACTIVITY', 'verifications', actId, existing, verif);
-  res.json(verif);
+// POST /api/verifications/:activityId — Verifikasi oleh KPA telah dihapus
+router.post('/:activityId', authenticate, async (req, res) => {
+  return res.status(410).json({ error: 'Fitur verifikasi kegiatan oleh KPA telah dihapus.' });
 });
 
-// DELETE /api/verifications/:activityId — Remove verification
-router.delete('/:activityId', authenticate, requireRole('KPA'), async (req, res) => {
-  const db = getDb();
-  const actId = parseInt(req.params.activityId);
-  const old = await db.prepare('SELECT * FROM verifications WHERE activity_id = ?').get(actId);
-  if (!old) return res.status(404).json({ error: 'Verifikasi tidak ditemukan' });
-  await db.prepare('DELETE FROM verifications WHERE activity_id = ?').run(actId);
-  await logActivity(req.user.id, 'REMOVE_VERIFICATION', 'verifications', actId, old, null);
-  res.json({ message: 'Verifikasi berhasil dibatalkan' });
+// DELETE /api/verifications/:activityId — Verifikasi oleh KPA telah dihapus
+router.delete('/:activityId', authenticate, async (req, res) => {
+  return res.status(410).json({ error: 'Fitur verifikasi kegiatan oleh KPA telah dihapus.' });
 });
 
 module.exports = router;

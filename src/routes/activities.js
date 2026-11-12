@@ -14,8 +14,8 @@ router.get('/', authenticate, async (req, res) => {
       e.nama as pegawai_nama, e.nip,
       pp.nama as pk_nama, pp.kode as pk_kode, pp.satuan as pk_satuan,
       p.nama as period_nama,
-      v.status as verif_status, v.catatan as verif_catatan, v.verified_at,
-      u_verif.username as verified_by_name,
+      NULL as verif_status, NULL as verif_catatan, NULL as verified_at,
+      NULL as verified_by_name,
       (SELECT COUNT(*) FROM activity_evidence ae WHERE ae.activity_id = da.id) as jumlah_bukti,
       (SELECT COUNT(*) FROM evidence_links el WHERE el.activity_id = da.id) as jumlah_link,
       (SELECT STRING_AGG(ae.keterangan, ' | ') FROM activity_evidence ae WHERE ae.activity_id = da.id AND ae.keterangan IS NOT NULL AND ae.keterangan <> '') as bukti_keterangan
@@ -23,8 +23,6 @@ router.get('/', authenticate, async (req, res) => {
     JOIN employees e ON da.employee_id = e.id
     JOIN periods p ON da.period_id = p.id
     LEFT JOIN performance_plans pp ON da.performance_plan_id = pp.id
-    LEFT JOIN verifications v ON v.activity_id = da.id
-    LEFT JOIN users u_verif ON v.verified_by = u_verif.id
     WHERE 1=1
   `;
   const params = [];
@@ -59,11 +57,10 @@ router.get('/calendar', authenticate, async (req, res) => {
       COUNT(da.id) as jumlah_kegiatan,
       AVG(da.persentase_capaian) as avg_capaian,
       SUM(CASE WHEN ae.id IS NOT NULL OR el.id IS NOT NULL THEN 1 ELSE 0 END) as has_bukti,
-      MAX(CASE WHEN v.status = 'terverifikasi' THEN 1 ELSE 0 END) as terverifikasi
+      0 as terverifikasi
     FROM daily_activities da
     LEFT JOIN activity_evidence ae ON ae.activity_id = da.id
     LEFT JOIN evidence_links el ON el.activity_id = da.id
-    LEFT JOIN verifications v ON v.activity_id = da.id
     WHERE 1=1
   `;
   const params = [];
@@ -117,13 +114,11 @@ router.get('/:id', authenticate, async (req, res) => {
   const db = getDb();
   const activity = await db.prepare(`
     SELECT da.*, e.nama as pegawai_nama, pp.nama as pk_nama, pp.kode as pk_kode,
-      v.status as verif_status, v.catatan as verif_catatan, v.verified_at,
-      u_v.username as verified_by_name
+      NULL as verif_status, NULL as verif_catatan, NULL as verified_at,
+      NULL as verified_by_name
     FROM daily_activities da
     JOIN employees e ON da.employee_id = e.id
     LEFT JOIN performance_plans pp ON da.performance_plan_id = pp.id
-    LEFT JOIN verifications v ON v.activity_id = da.id
-    LEFT JOIN users u_v ON v.verified_by = u_v.id
     WHERE da.id = ?
   `).get(req.params.id);
 

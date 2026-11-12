@@ -216,16 +216,12 @@ async function seedInitialData(db) {
     for (const a of activitiesData[username]) {
       const plan = planIds[username][a.pkIdx];
       if (!plan) continue;
-      const result = await insertActivity.run(
+      await insertActivity.run(
         empId, plan.id, periodId, a.date, a.kegiatan,
         `Melaksanakan ${a.kegiatan.toLowerCase()}`,
         a.target, plan.satuan, a.real, Math.round((a.real / a.target) * 100),
         a.status, null
       );
-      const actId = result.lastInsertRowid;
-      if (a.verified && actId && kpaUserId) {
-        await insertVerif.run(actId, kpaUserId, 'terverifikasi', 'Sudah sesuai dengan target', a.date + ' 16:00:00');
-      }
     }
   }
 

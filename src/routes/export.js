@@ -67,7 +67,6 @@ router.get('/excel', authenticate, async (req, res) => {
       Realisasi: a.realisasi ?? '-',
       'Capaian (%)': a.persentase_capaian || 0,
       'Status Kegiatan': a.status_kegiatan,
-      'Status Verifikasi': a.verif_status || 'Belum diverifikasi',
       'Jumlah Bukti': (a.jumlah_bukti || 0) + (a.jumlah_link || 0),
       'Info Bukti / Geotag': a.info_bukti || '-',
       Catatan: a.catatan || '-',
