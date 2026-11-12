@@ -21,11 +21,9 @@ const mphRoutes = require('./routes/mph');
 
 const app = express();
 
-// Middleware
+// Middleware — izinkan akses dari Web Monitoring maupun Aplikasi Mobile SI-CKP
 app.use(cors({
-  origin: process.env.FRONTEND_URL
-    ? (process.env.FRONTEND_URL === '*' ? true : process.env.FRONTEND_URL.split(',').map(s => s.trim()))
-    : true,
+  origin: true,
   credentials: true
 }));
 app.use(express.json({ limit: '4mb' }));
