@@ -87,48 +87,116 @@ router.get('/ckp', authenticate, async (req, res) => {
   const behavior = await db.prepare('SELECT nilai_akhir FROM behavior_assessments WHERE employee_id = ? AND period_id = ?').get(empId, period_id);
   const nilaiPerilaku = behavior?.nilai_akhir || 0;
 
+  // Get existing CKP score record
+  const existing = await db.prepare('SELECT * FROM monthly_ckp_scores WHERE employee_id = ? AND period_id = ?').get(empId, period_id);
+
+  const nilaiPKCalculated = Math.round(nilaiPK * 10) / 10;
+  const finalNilaiPK = (existing && existing.nilai_pk != null) ? existing.nilai_pk : nilaiPKCalculated;
+  const finalNilaiPerilaku = nilaiPerilaku || existing?.nilai_perilaku || 0;
+
   const components = weights.map(w => {
     let nilai = 0;
-    if (w.kode === 'PK') nilai = Math.round(nilaiPK * 10) / 10;
-    else if (w.kode === 'PERILAKU') nilai = nilaiPerilaku;
+    if (w.kode === 'PK') nilai = finalNilaiPK;
+    else if (w.kode === 'PERILAKU') nilai = finalNilaiPerilaku;
     return { kode: w.kode, bobot: w.bobot, nilai, nilai_tertimbang: Math.round((nilai * w.bobot) / 100 * 10) / 10 };
   });
 
   const nilaiCKP = components.reduce((sum, c) => sum + c.nilai_tertimbang, 0);
 
-  // Get existing CKP score record
-  const existing = await db.prepare('SELECT * FROM monthly_ckp_scores WHERE employee_id = ? AND period_id = ?').get(empId, period_id);
-
   res.json({
-    nilai_pk: Math.round(nilaiPK * 10) / 10,
-    nilai_perilaku: nilaiPerilaku,
+    nilai_pk: finalNilaiPK,
+    nilai_pk_auto: nilaiPKCalculated,
+    nilai_perilaku: finalNilaiPerilaku,
     nilai_ckp: Math.round(nilaiCKP * 10) / 10,
     components,
     status: existing?.status || 'draft',
+    catatan: existing?.catatan || '',
     existing
+  });
+});
+
+// PUT /api/scores/ckp — KPA inputs/updates Nilai PK / CKP manually
+router.put('/ckp', authenticate, requireRole('KPA'), async (req, res) => {
+  const db = getDb();
+  const { employee_id, period_id, nilai_pk, nilai_ckp: customNilaiCkp, catatan } = req.body;
+  if (!employee_id || !period_id) return res.status(400).json({ error: 'Employee dan periode wajib diisi' });
+
+  const weights = await db.prepare(`
+    SELECT cw.bobot, cc.kode FROM ckp_weights cw JOIN ckp_components cc ON cw.component_id = cc.id
+    WHERE cw.period_id = ? AND cc.is_active = 1
+  `).all(period_id);
+
+  const behavior = await db.prepare('SELECT nilai_akhir FROM behavior_assessments WHERE employee_id = ? AND period_id = ?').get(employee_id, period_id);
+  const nilaiPerilaku = behavior?.nilai_akhir || 0;
+
+  const parsedPK = parseFloat(nilai_pk) || 0;
+  let finalCKP = 0;
+  if (customNilaiCkp !== undefined && customNilaiCkp !== '' && customNilaiCkp !== null) {
+    finalCKP = parseFloat(customNilaiCkp) || 0;
+  } else if (weights.length > 0) {
+    weights.forEach(w => {
+      const nilai = w.kode === 'PK' ? parsedPK : (w.kode === 'PERILAKU' ? nilaiPerilaku : 0);
+      finalCKP += (nilai * w.bobot) / 100;
+    });
+  } else {
+    finalCKP = parsedPK;
+  }
+
+  const existing = await db.prepare('SELECT * FROM monthly_ckp_scores WHERE employee_id = ? AND period_id = ?').get(employee_id, period_id);
+  const status = existing?.status || 'draft';
+
+  await db.prepare(`
+    INSERT INTO monthly_ckp_scores (employee_id, period_id, nilai_pk, nilai_perilaku, nilai_ckp, status, catatan, calculated_at)
+    VALUES (?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
+    ON CONFLICT(employee_id, period_id) DO UPDATE SET
+      nilai_pk=excluded.nilai_pk,
+      nilai_perilaku=excluded.nilai_perilaku,
+      nilai_ckp=excluded.nilai_ckp,
+      catatan=excluded.catatan,
+      calculated_at=CURRENT_TIMESTAMP
+  `).run(
+    employee_id,
+    period_id,
+    Math.round(parsedPK * 10) / 10,
+    nilaiPerilaku,
+    Math.round(finalCKP * 10) / 10,
+    status,
+    catatan || null
+  );
+
+  await logActivity(req.user.id, 'INPUT_CKP', 'monthly_ckp_scores', employee_id, existing, { employee_id, period_id, nilai_pk: parsedPK, nilai_ckp: finalCKP });
+  res.json({
+    message: 'Nilai CKP berhasil disimpan',
+    nilai_pk: Math.round(parsedPK * 10) / 10,
+    nilai_perilaku: nilaiPerilaku,
+    nilai_ckp: Math.round(finalCKP * 10) / 10
   });
 });
 
 // POST /api/scores/ckp/finalize — Finalize CKP score
 router.post('/ckp/finalize', authenticate, requireRole('KPA'), async (req, res) => {
   const db = getDb();
-  const { employee_id, period_id } = req.body;
+  const { employee_id, period_id, nilai_pk } = req.body;
   if (!employee_id || !period_id) return res.status(400).json({ error: 'Employee dan periode wajib diisi' });
 
-  // Recalculate
   const weights = await db.prepare(`
     SELECT cw.bobot, cc.kode FROM ckp_weights cw JOIN ckp_components cc ON cw.component_id = cc.id
     WHERE cw.period_id = ? AND cc.is_active = 1
   `).all(period_id);
 
+  const existing = await db.prepare('SELECT * FROM monthly_ckp_scores WHERE employee_id = ? AND period_id = ?').get(employee_id, period_id);
   const plans = await getPlansWithRealisasi(db, employee_id, period_id);
-  const { nilaiPK } = calcNilaiPK(plans);
+  const { nilaiPK: autoPK } = calcNilaiPK(plans);
+
+  const finalPK = nilai_pk !== undefined && nilai_pk !== null && nilai_pk !== ''
+    ? parseFloat(nilai_pk)
+    : (existing && existing.nilai_pk != null ? existing.nilai_pk : autoPK);
 
   const behavior = await db.prepare('SELECT nilai_akhir FROM behavior_assessments WHERE employee_id = ? AND period_id = ?').get(employee_id, period_id);
   const nilaiPerilaku = behavior?.nilai_akhir || 0;
   let nilaiCKP = 0;
   weights.forEach(w => {
-    const nilai = w.kode === 'PK' ? nilaiPK : (w.kode === 'PERILAKU' ? nilaiPerilaku : 0);
+    const nilai = w.kode === 'PK' ? finalPK : (w.kode === 'PERILAKU' ? nilaiPerilaku : 0);
     nilaiCKP += (nilai * w.bobot) / 100;
   });
 
@@ -138,7 +206,7 @@ router.post('/ckp/finalize', authenticate, requireRole('KPA'), async (req, res) 
     ON CONFLICT(employee_id, period_id) DO UPDATE SET
       nilai_pk=excluded.nilai_pk, nilai_perilaku=excluded.nilai_perilaku,
       nilai_ckp=excluded.nilai_ckp, status='final', finalized_at=CURRENT_TIMESTAMP
-  `).run(employee_id, period_id, Math.round(nilaiPK * 10) / 10, nilaiPerilaku, Math.round(nilaiCKP * 10) / 10);
+  `).run(employee_id, period_id, Math.round(finalPK * 10) / 10, nilaiPerilaku, Math.round(nilaiCKP * 10) / 10);
 
   await logActivity(req.user.id, 'FINALIZE_CKP', 'monthly_ckp_scores', employee_id, null, { employee_id, period_id, nilaiCKP });
   res.json({ message: 'Nilai CKP berhasil difinalisasi', nilai_ckp: Math.round(nilaiCKP * 10) / 10 });
