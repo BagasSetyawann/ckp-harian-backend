@@ -8,10 +8,23 @@ let _bucketReady = false;
 
 function getStorage() {
   if (!_client) {
-    const url = process.env.SUPABASE_URL;
-    const key = process.env.SUPABASE_SERVICE_ROLE_KEY;
-    if (!url || !key) {
-      throw new Error('SUPABASE_URL dan SUPABASE_SERVICE_ROLE_KEY belum diset');
+    let url = (process.env.SUPABASE_URL || '').trim();
+    const key = (process.env.SUPABASE_SERVICE_ROLE_KEY || '').trim();
+
+    // Auto-derive SUPABASE_URL from DATABASE_URL if missing or invalid
+    if (!/^https?:\/\//i.test(url) && process.env.DATABASE_URL) {
+      const match = process.env.DATABASE_URL.match(/postgres\.([a-z0-9]+)[:@]|db\.([a-z0-9]+)\.supabase\.co/i);
+      const ref = match?.[1] || match?.[2];
+      if (ref) url = `https://${ref}.supabase.co`;
+    } else if (url && !/^https?:\/\//i.test(url) && /^[a-z0-9]{15,30}$/i.test(url)) {
+      url = `https://${url}.supabase.co`;
+    }
+
+    if (!url || !/^https?:\/\//i.test(url)) {
+      throw new Error('SUPABASE_URL tidak valid. Harus berupa URL HTTPS seperti: https://losubjmyaivyyuhrndts.supabase.co');
+    }
+    if (!key) {
+      throw new Error('SUPABASE_SERVICE_ROLE_KEY belum diset di Environment Variables Vercel');
     }
     _client = createClient(url, key, { auth: { persistSession: false, autoRefreshToken: false } });
   }
