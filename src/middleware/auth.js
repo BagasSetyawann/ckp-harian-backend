@@ -5,10 +5,12 @@ const JWT_SECRET = process.env.JWT_SECRET || 'si-ckp-secret-key-2026-very-secure
 
 function authenticate(req, res, next) {
   const authHeader = req.headers.authorization;
-  if (!authHeader || !authHeader.startsWith('Bearer ')) {
+  const token = (authHeader && authHeader.startsWith('Bearer '))
+    ? authHeader.split(' ')[1]
+    : req.query?.token;
+  if (!token) {
     return res.status(401).json({ error: 'Token tidak ditemukan' });
   }
-  const token = authHeader.split(' ')[1];
   try {
     const decoded = jwt.verify(token, JWT_SECRET);
     req.user = decoded;

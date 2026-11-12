@@ -17,7 +17,8 @@ router.get('/', authenticate, async (req, res) => {
       v.status as verif_status, v.catatan as verif_catatan, v.verified_at,
       u_verif.username as verified_by_name,
       (SELECT COUNT(*) FROM activity_evidence ae WHERE ae.activity_id = da.id) as jumlah_bukti,
-      (SELECT COUNT(*) FROM evidence_links el WHERE el.activity_id = da.id) as jumlah_link
+      (SELECT COUNT(*) FROM evidence_links el WHERE el.activity_id = da.id) as jumlah_link,
+      (SELECT STRING_AGG(ae.keterangan, ' | ') FROM activity_evidence ae WHERE ae.activity_id = da.id AND ae.keterangan IS NOT NULL AND ae.keterangan <> '') as bukti_keterangan
     FROM daily_activities da
     JOIN employees e ON da.employee_id = e.id
     JOIN periods p ON da.period_id = p.id

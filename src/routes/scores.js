@@ -79,9 +79,13 @@ router.get('/ckp', authenticate, async (req, res) => {
     return res.json({ nilai_ckp: 0, components: [], message: 'Bobot CKP belum dikonfigurasi' });
   }
 
-  // Get PK score
-  const plans = await getPlansWithRealisasi(db, empId, period_id);
-  const { nilaiPK } = calcNilaiPK(plans);
+  // Get average daily activity achievement as reference for Nilai Capaian (PK)
+  const actAvgRow = await db.prepare(`
+    SELECT AVG(persentase_capaian) as avg_capaian
+    FROM daily_activities
+    WHERE employee_id = ? AND period_id = ?
+  `).get(empId, period_id);
+  const nilaiPK = actAvgRow?.avg_capaian || 0;
 
   // Get behavior score
   const behavior = await db.prepare('SELECT nilai_akhir FROM behavior_assessments WHERE employee_id = ? AND period_id = ?').get(empId, period_id);
